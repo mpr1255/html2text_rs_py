@@ -113,7 +113,7 @@ jobs:
           name: wheels
 
       - name: Check env
-        run: echo ${{ secrets.PYPI_API_TOKEN[:4] }}
+        run: echo "${{ secrets.PYPI_API_TOKEN }}" | cut -c1-4
 
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
