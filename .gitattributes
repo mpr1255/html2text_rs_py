@@ -1,0 +1,2 @@
+tests/test_data/input_html/* linguist-vendored
+tests/test_data/output_txt/* linguist-vendored

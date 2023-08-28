@@ -1,0 +1,34 @@
+
+Single-threaded Statistics:
+
+Method: tika
+Documents Processed: 7
+Total Output Size: 51567 bytes
+Errors Encountered: 0
+Time Taken: 0.154710054397583 seconds
+
+Method: html2text
+Documents Processed: 7
+Total Output Size: 60256 bytes
+Errors Encountered: 0
+Time Taken: 0.13296890258789062 seconds
+
+Method: rust
+Documents Processed: 7
+Total Output Size: 115638 bytes
+Errors Encountered: 0
+Time Taken: 0.011429786682128906 seconds
+
+Multi-threaded Statistics:
+
+Method: tika
+Documents Processed: 7
+Total Output Size: 51567 bytes
+Errors Encountered: 0
+Time Taken: 0.06133103370666504 seconds
+
+Method: html2text
+Documents Processed: 7
+Total Output Size: 60256 bytes
+Errors Encountered: 0
+Time Taken: 0.1303410530090332 seconds
