@@ -8,7 +8,7 @@ Note this entire thing was done with GPT-4 and it's my first time touching Rust.
 - [Usage](#usage)
 - [Contributing](#contributing)
 - [License](#license)
-- [Note on benchmarks](#Note on benchmarks)
+- [Note on benchmarks](#Note-on-benchmarks)
 - [Benchmarks](#Benchmarks)
 
 ## Installation
