@@ -105,12 +105,16 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    # if: "startsWith(github.ref, 'refs/tags/')"
+    if: "startsWith(github.ref, 'refs/tags/')"
     needs: [linux, windows, macos, sdist]
     steps:
       - uses: actions/download-artifact@v3
         with:
           name: wheels
+
+      - name: Check env
+        run: echo ${{ secrets.PYPI_API_TOKEN[:4] }}
+
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
         env:
