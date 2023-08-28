@@ -12,6 +12,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
-
 [tool.maturin]
 features = ["pyo3/extension-module"]
+
+[project.urls]
+"Source Code" = "https://github.com/mpr1255/html2text_rs_py"

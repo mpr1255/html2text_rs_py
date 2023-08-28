@@ -1,5 +1,5 @@
 ```markdown
-# Documentation for html2text-rs-py
+# Documentation for html2text_rs_py
 
 ## Functions
 
