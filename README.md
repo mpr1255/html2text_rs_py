@@ -23,14 +23,26 @@ pip install maturin
 
 ### Building and Installing:
 
-1. Clone this repository:
+#### Option 1: Use precompiled binaries from PyPI
+You can use the precompiled binaries available on PyPI. This means you don't need to compile anything yourself, and the Rust toolchain is not required.
+
+```bash
+pip install html2text_rs_py
+```
+
+#### Option 2: Building from source:
+If you prefer to compile the Rust code yourself, or if you're interested in developing, you can build directly from the source code:
+
+1. First, ensure you have the Rust toolchain installed. If you don't have it, get it from rustup.rs.
+
+2. Clone this repo:
 
 ```bash
 git clone https://github.com/mpr1255/html2text_rs_py.git
 cd html2text_rs_py
 ```
 
-2. Build and install the Python package:
+3. Build and install the Python package:
 
 ```bash
 maturin develop --release
