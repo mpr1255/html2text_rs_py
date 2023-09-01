@@ -1,7 +1,7 @@
 # html2text_rs_py
 A Python library backed by Rust's [html2text](https://docs.rs/html2text) to convert HTML to plain text. The project leverages the power of Rust to ensure fast and efficient operations, while providing an easy-to-use Python interface.
 
-Note this entire thing was done with GPT-4 and it's my first time touching Rust. I had a project where I have to convert ~400m htm/html files to txt, and I wanted to optimize that, and this public repo is just a bit of a weekend sidequest/learning experience. As a wise man once said: *"I'm in the arena trying stuff. Some will work, some won't. But always learning."*
+Note this entire thing was done with GPT-4 and it's my first time touching Rust -- just a bit of a weekend sidequest/learning experience. As a wise man once said: *"I'm in the arena trying stuff. Some will work, some won't. But always learning."*
 
 ## Table of Contents
 - [Installation](#installation)
