@@ -55,7 +55,7 @@ This will compile the Rust code and link it with the Python wrapper, making the 
 After installing, you can use the Rust functions directly in Python:
 
 ```python
-from html2text_rs_py import convert_html_directory_to_text, convert_html_file_to_text_py, convert_html_files_to_text_batch_py
+from html2text_rs_py import convert_html_directory_to_text, convert_html_file_to_text_py, convert_html_files_to_text_batch_py, extract_text_from_html_file_py
 
 convert_html_directory_to_text("./input_directory", "./output_directory")
 
@@ -66,6 +66,10 @@ convert_html_file_to_text_py("input_file.html", "output_file.txt")
 input_files = ["input1.html", "input2.html"]
 output_files = ["output1.txt", "output2.txt"]
 convert_html_files_to_text_batch_py(input_files, output_files)
+
+# Convert html file into a python string object and return as a variable
+input_file_path = "path/to/file.html"
+extracted_text = extract_text_from_html_file_py(input_file_path)
 ```
 
 ## Contributing
