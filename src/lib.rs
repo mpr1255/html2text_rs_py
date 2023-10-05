@@ -66,6 +66,27 @@ fn convert_html_file_to_text(input_file: &str, output_file: &str) {
     }
 }
 
+fn extract_text_from_html_file(input_file: &str) -> Result<String, std::io::Error> {
+    if let Ok(html_content) = fs::read_to_string(input_file) {
+        let text_content = html2text::from_read(html_content.as_bytes(), 80);
+        Ok(text_content)
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("Error reading file: {:?}", input_file),
+        ))
+    }
+}
+
+#[pyfunction]
+fn extract_text_from_html_file_py(input_file: &str) -> PyResult<String> {
+    match extract_text_from_html_file(input_file) {
+        Ok(text_content) => Ok(text_content),
+        Err(err) => Err(PyValueError::new_err(format!("Failed to extract text: {}", err))),
+    }
+}
+
+
 #[pyfunction]
 fn convert_html_directory_to_text(input_dir: &str, output_dir: &str) -> PyResult<()> {
     let paths = collect_html_files(input_dir);
@@ -101,6 +122,7 @@ fn html2text_rs_py(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(convert_html_directory_to_text, m)?)?;
     m.add_function(wrap_pyfunction!(convert_html_file_to_text_py, m)?)?;
     m.add_function(wrap_pyfunction!(convert_html_files_to_text_batch_py, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_text_from_html_file_py, m)?)?;
     Ok(())
 }
 
