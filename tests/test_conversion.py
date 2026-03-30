@@ -248,6 +248,34 @@ class TestHtml2TextRust(unittest.TestCase):
         self.assertIn("国際協力", extracted_text)
         self.assertNotIn("Menu", extracted_text)
 
+    def test_text_plain_accepts_bytes_input_directly(self):
+        html = """
+        <html>
+            <head><meta charset="Shift_JIS"></head>
+            <body>
+                <main id="content">
+                    <h1>外務省</h1>
+                    <p>本文です。</p>
+                </main>
+            </body>
+        </html>
+        """
+        html_bytes = html.encode("shift_jis")
+
+        extracted_text = text_plain(
+            html_bytes,
+            include_selectors=["#content"],
+        )
+
+        alias_text = extract_text_from_html_py(
+            html_bytes,
+            include_selectors=["#content"],
+        )
+
+        self.assertIn("外務省", extracted_text)
+        self.assertIn("本文です", extracted_text)
+        self.assertEqual(extracted_text, alias_text)
+
     def test_shift_jis_file_api_uses_meta_charset(self):
         html_file = os.path.join(self.output_folder, "shift_jis_page.html")
         html = """
@@ -276,6 +304,26 @@ class TestHtml2TextRust(unittest.TestCase):
         self.assertIn("報道発表", extracted_text)
         self.assertIn("本文を抽出します", extracted_text)
         self.assertNotIn("Menu", extracted_text)
+
+    def test_source_url_resolves_relative_links(self):
+        html = """
+        <html>
+            <body>
+                <main id="content">
+                    <a href="/mofaj/press/release/example.html">Press release</a>
+                </main>
+            </body>
+        </html>
+        """
+
+        extracted_text = text_plain(
+            html,
+            include_selectors=["#content"],
+            source_url="https://www.mofa.go.jp/mofaj/press/release/index.html",
+        )
+
+        self.assertIn("Press release", extracted_text)
+        self.assertIn("https://www.mofa.go.jp/mofaj/press/release/example.html", extracted_text)
 
     def test_strip_table_borders_flag_removes_border_only_lines(self):
         html = """

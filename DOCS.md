@@ -2,11 +2,11 @@
 
 ## Main Python functions
 
-`text_plain(html_content: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False) -> str`
+`text_plain(html_content: str | bytes, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False, source_url: str | None = None) -> str`
 
-Converts HTML text to plain text, optionally keeping only selected subtrees or removing unwanted selectors before rendering.
+Converts HTML text or HTML bytes to plain text, optionally keeping only selected subtrees or removing unwanted selectors before rendering. When `source_url` is provided, relative `href` and `src` values are resolved before rendering.
 
-`text_plain_from_bytes(html_bytes: bytes, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False) -> str`
+`text_plain_from_bytes(html_bytes: bytes, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False, source_url: str | None = None) -> str`
 
 Accepts raw HTML bytes, sniffs BOM or `<meta charset=...>`, decodes with `encoding_rs`, then applies the same selector-aware extraction pipeline.
 
@@ -16,7 +16,7 @@ This is the preferred entry point when your fetcher already has raw response byt
 
 Alias-style string input helper with the same selector options as `text_plain`.
 
-`extract_text_from_html_file_py(input_file: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False) -> str`
+`extract_text_from_html_file_py(input_file: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False, source_url: str | None = None) -> str`
 
 Reads an HTML file, optionally filters by selectors, and returns plain text.
 
@@ -55,7 +55,7 @@ The installed console script is:
 Supported subcommands:
 
 1. `selectors INPUT_DIR --top-k 50 --min-docs 5`
-2. `extract INPUT_FILE --include main --exclude nav --strip-table-borders`
+2. `extract INPUT_FILE --include main --exclude nav --strip-table-borders --source-url https://example.com/page.html`
 3. `convert-file INPUT_FILE OUTPUT_FILE --exclude nav --exclude footer`
 4. `convert-dir INPUT_DIR OUTPUT_DIR --include main --exclude .ad-slot`
 

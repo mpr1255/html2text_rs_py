@@ -100,7 +100,7 @@ uv run --with maturin maturin develop --release
 
 ## Python usage
 
-String-first extraction:
+String- or bytes-first extraction:
 
 ```python
 from html2text_rs_py import text_plain
@@ -121,6 +121,16 @@ html = """
 text = text_plain(
     html,
     exclude_selectors=["nav", "footer"],
+)
+```
+
+The same entry point also accepts raw `bytes` and will decode them from BOM or `<meta charset=...>` automatically:
+
+```python
+text = text_plain(
+    raw_html_bytes,
+    include_selectors=["#content"],
+    exclude_selectors=["nav", ".sidebar", "footer"],
 )
 ```
 
@@ -145,6 +155,16 @@ text = text_plain_from_bytes(
     raw_html_bytes,
     include_selectors=["#content", "article"],
     exclude_selectors=["nav", ".sidebar", "footer"],
+)
+```
+
+If you want relative links in the rendered text to become absolute, pass the page URL:
+
+```python
+text = text_plain(
+    html,
+    include_selectors=["#content"],
+    source_url="https://www.mofa.go.jp/mofaj/press/release/index.html",
 )
 ```
 
@@ -207,6 +227,7 @@ The package exposes a console script:
 html2text-rs-py selectors ./corpus --top-k 50 --min-docs 5
 html2text-rs-py extract page.html --exclude nav --exclude footer
 html2text-rs-py extract page.html --include '#content' --strip-table-borders
+html2text-rs-py extract page.html --include '#content' --source-url 'https://www.mofa.go.jp/mofaj/press/release/index.html'
 html2text-rs-py convert-file page.html page.txt --include main --exclude .ad-slot
 html2text-rs-py convert-dir ./html ./txt --exclude nav --exclude .sidebar --exclude footer
 ```
@@ -233,4 +254,4 @@ If both `include_selectors` and `exclude_selectors` are provided, the pipeline i
 2. HTML decoding now checks BOM first, then `<meta charset=...>`, then falls back to UTF-8 handling.
 3. `strip_table_borders=True` removes lines that are only table-border glyphs from old table-layout pages.
 4. The selector explorer is designed to surface repeated classes, ids, tags, tag-class combos, and tag-id combos across a corpus.
-5. The package version is currently `0.2.1`.
+5. The package version is currently `0.2.2`.

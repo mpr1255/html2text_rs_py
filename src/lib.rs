@@ -3,14 +3,16 @@ use clap::{Args, Parser, Subcommand};
 use encoding_rs::{Encoding, UTF_8};
 use kuchiki::traits::*;
 use kuchiki::NodeRef;
-use pyo3::exceptions::{PyIOError, PyValueError};
+use pyo3::exceptions::{PyIOError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyAny;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use url::Url;
 use walkdir::WalkDir;
 
 const DEFAULT_WIDTH: usize = 80;
@@ -67,6 +69,8 @@ struct ExtractArgs {
     input: String,
     #[arg(long)]
     output: Option<String>,
+    #[arg(long)]
+    source_url: Option<String>,
     #[command(flatten)]
     filter: FilterArgs,
 }
@@ -191,6 +195,37 @@ fn filter_html(
     }
 
     Ok(filtered_html)
+}
+
+fn absolutize_document_urls(html_content: &str, source_url: Option<&str>) -> Result<String> {
+    let Some(source_url) = source_url.filter(|value| !value.trim().is_empty()) else {
+        return Ok(html_content.to_string());
+    };
+
+    let base_url = Url::parse(source_url)
+        .map_err(|err| anyhow!("Invalid source_url '{source_url}': {err}"))?;
+    let document = kuchiki::parse_html().one(html_content);
+
+    for element in document.descendants().elements() {
+        let mut attributes = element.attributes.borrow_mut();
+        for attr_name in ["href", "src"] {
+            let Some(raw_value) = attributes.get(attr_name) else {
+                continue;
+            };
+            let value = raw_value.trim();
+            if value.is_empty() {
+                continue;
+            }
+            if Url::parse(value).is_ok() {
+                continue;
+            }
+            if let Ok(resolved) = base_url.join(value) {
+                attributes.insert(attr_name, resolved.into());
+            }
+        }
+    }
+
+    Ok(document.to_string())
 }
 
 fn is_table_border_char(ch: char) -> bool {
@@ -370,13 +405,15 @@ fn text_plain_from_html(
     include_selectors: Option<&str>,
     exclude_selectors: Option<&str>,
     strip_table_borders: bool,
+    source_url: Option<&str>,
 ) -> Result<String> {
     let filtered_html = filter_html(html_content, include_selectors, exclude_selectors)?;
     if filtered_html.is_empty() {
         return Ok(String::new());
     }
 
-    let text = html2text::from_read(filtered_html.as_bytes(), normalize_width(width));
+    let render_html = absolutize_document_urls(&filtered_html, source_url)?;
+    let text = html2text::from_read(render_html.as_bytes(), normalize_width(width));
     Ok(normalize_text_content(text, strip_table_borders))
 }
 
@@ -494,6 +531,7 @@ fn convert_html_file_to_text_impl(
         include_selectors,
         exclude_selectors,
         strip_table_borders,
+        None,
     )?;
     write_text_file(output_file, &text_content)
 }
@@ -739,6 +777,7 @@ fn run_cli(args: Vec<String>) -> Result<()> {
                 include_selectors.as_deref(),
                 exclude_selectors.as_deref(),
                 args.filter.strip_table_borders,
+                args.source_url.as_deref(),
             )?;
             if let Some(output_file) = args.output {
                 write_text_file(&output_file, &text)?;
@@ -789,29 +828,46 @@ fn to_py_result<T>(result: Result<T>) -> PyResult<T> {
     })
 }
 
-#[pyfunction(signature = (html_content, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
+fn decode_python_html_input(input: &PyAny, argument_name: &str) -> PyResult<String> {
+    if let Ok(html_content) = input.extract::<&str>() {
+        return Ok(html_content.to_string());
+    }
+
+    if let Ok(html_bytes) = input.extract::<Vec<u8>>() {
+        return Ok(decode_html_bytes(&html_bytes));
+    }
+
+    Err(PyTypeError::new_err(format!(
+        "argument '{argument_name}' must be str or bytes"
+    )))
+}
+
+#[pyfunction(signature = (html_content, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false, source_url = None))]
 fn text_plain(
     py: Python<'_>,
-    html_content: &str,
+    html_content: &PyAny,
     width: usize,
     include_selectors: Option<Vec<String>>,
     exclude_selectors: Option<Vec<String>>,
     strip_table_borders: bool,
+    source_url: Option<String>,
 ) -> PyResult<String> {
     let include_selectors = normalize_selector_list(include_selectors);
     let exclude_selectors = normalize_selector_list(exclude_selectors);
+    let html_content = decode_python_html_input(html_content, "html_content")?;
     to_py_result(py.allow_threads(|| {
         text_plain_from_html(
-            html_content,
+            &html_content,
             width,
             include_selectors.as_deref(),
             exclude_selectors.as_deref(),
             strip_table_borders,
+            source_url.as_deref(),
         )
     }))
 }
 
-#[pyfunction(signature = (html_bytes, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
+#[pyfunction(signature = (html_bytes, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false, source_url = None))]
 fn text_plain_from_bytes(
     py: Python<'_>,
     html_bytes: Vec<u8>,
@@ -819,6 +875,7 @@ fn text_plain_from_bytes(
     include_selectors: Option<Vec<String>>,
     exclude_selectors: Option<Vec<String>>,
     strip_table_borders: bool,
+    source_url: Option<String>,
 ) -> PyResult<String> {
     let include_selectors = normalize_selector_list(include_selectors);
     let exclude_selectors = normalize_selector_list(exclude_selectors);
@@ -830,11 +887,12 @@ fn text_plain_from_bytes(
             include_selectors.as_deref(),
             exclude_selectors.as_deref(),
             strip_table_borders,
+            source_url.as_deref(),
         )
     }))
 }
 
-#[pyfunction(signature = (input_file, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
+#[pyfunction(signature = (input_file, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false, source_url = None))]
 fn extract_text_from_html_file_py(
     py: Python<'_>,
     input_file: &str,
@@ -842,6 +900,7 @@ fn extract_text_from_html_file_py(
     include_selectors: Option<Vec<String>>,
     exclude_selectors: Option<Vec<String>>,
     strip_table_borders: bool,
+    source_url: Option<String>,
 ) -> PyResult<String> {
     let include_selectors = normalize_selector_list(include_selectors);
     let exclude_selectors = normalize_selector_list(exclude_selectors);
@@ -853,18 +912,20 @@ fn extract_text_from_html_file_py(
             include_selectors.as_deref(),
             exclude_selectors.as_deref(),
             strip_table_borders,
+            source_url.as_deref(),
         )
     }))
 }
 
-#[pyfunction(signature = (html_content, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
+#[pyfunction(signature = (html_content, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false, source_url = None))]
 fn extract_text_from_html_py(
     py: Python<'_>,
-    html_content: &str,
+    html_content: &PyAny,
     width: usize,
     include_selectors: Option<Vec<String>>,
     exclude_selectors: Option<Vec<String>>,
     strip_table_borders: bool,
+    source_url: Option<String>,
 ) -> PyResult<String> {
     text_plain(
         py,
@@ -873,6 +934,7 @@ fn extract_text_from_html_py(
         include_selectors,
         exclude_selectors,
         strip_table_borders,
+        source_url,
     )
 }
 
