@@ -2,11 +2,11 @@
 
 ## Main Python functions
 
-`text_plain(html_content: str | bytes, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False, source_url: str | None = None) -> str`
+`text_plain(html_content: str | bytes, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False) -> str`
 
-Converts HTML text or HTML bytes to plain text, optionally keeping only selected subtrees or removing unwanted selectors before rendering. When `source_url` is provided, relative `href` and `src` values are resolved before rendering.
+Converts HTML text or HTML bytes to plain text, optionally keeping only selected subtrees or removing unwanted selectors before rendering.
 
-`text_plain_from_bytes(html_bytes: bytes, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False, source_url: str | None = None) -> str`
+`text_plain_from_bytes(html_bytes: bytes, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False) -> str`
 
 Accepts raw HTML bytes, sniffs BOM or `<meta charset=...>`, decodes with `encoding_rs`, then applies the same selector-aware extraction pipeline.
 
@@ -16,7 +16,7 @@ This is the preferred entry point when your fetcher already has raw response byt
 
 Alias-style string input helper with the same selector options as `text_plain`.
 
-`extract_text_from_html_file_py(input_file: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False, source_url: str | None = None) -> str`
+`extract_text_from_html_file_py(input_file: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False) -> str`
 
 Reads an HTML file, optionally filters by selectors, and returns plain text.
 
@@ -27,10 +27,6 @@ Converts one HTML file to one text file.
 `convert_html_files_to_text_batch_py(input_files: list[str], output_files: list[str], width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False) -> None`
 
 Converts many HTML files in parallel.
-
-`convert_html_directory_to_text(input_dir: str, output_dir: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None, strip_table_borders: bool = False) -> None`
-
-Walks a directory tree, finds HTML files, and writes matching text files into the output tree.
 
 `analyze_html_directory_selectors_py(input_dir: str, top_k: int = 50, min_docs: int = 1) -> list[tuple[str, str, int, int]]`
 
@@ -57,7 +53,6 @@ Supported subcommands:
 1. `selectors INPUT_DIR --top-k 50 --min-docs 5`
 2. `extract INPUT_FILE --include main --exclude nav --strip-table-borders --source-url https://example.com/page.html`
 3. `convert-file INPUT_FILE OUTPUT_FILE --exclude nav --exclude footer`
-4. `convert-dir INPUT_DIR OUTPUT_DIR --include main --exclude .ad-slot`
 
 ## selector pipeline
 

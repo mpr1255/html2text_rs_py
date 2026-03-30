@@ -12,7 +12,6 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use url::Url;
 use walkdir::WalkDir;
 
 const DEFAULT_WIDTH: usize = 80;
@@ -40,7 +39,6 @@ enum CliCommand {
     Selectors(SelectorArgs),
     Extract(ExtractArgs),
     ConvertFile(ConvertFileArgs),
-    ConvertDir(ConvertDirArgs),
 }
 
 #[derive(Args, Debug)]
@@ -69,8 +67,6 @@ struct ExtractArgs {
     input: String,
     #[arg(long)]
     output: Option<String>,
-    #[arg(long)]
-    source_url: Option<String>,
     #[command(flatten)]
     filter: FilterArgs,
 }
@@ -79,14 +75,6 @@ struct ExtractArgs {
 struct ConvertFileArgs {
     input_file: String,
     output_file: String,
-    #[command(flatten)]
-    filter: FilterArgs,
-}
-
-#[derive(Args, Debug)]
-struct ConvertDirArgs {
-    input_dir: String,
-    output_dir: String,
     #[command(flatten)]
     filter: FilterArgs,
 }
@@ -195,37 +183,6 @@ fn filter_html(
     }
 
     Ok(filtered_html)
-}
-
-fn absolutize_document_urls(html_content: &str, source_url: Option<&str>) -> Result<String> {
-    let Some(source_url) = source_url.filter(|value| !value.trim().is_empty()) else {
-        return Ok(html_content.to_string());
-    };
-
-    let base_url = Url::parse(source_url)
-        .map_err(|err| anyhow!("Invalid source_url '{source_url}': {err}"))?;
-    let document = kuchiki::parse_html().one(html_content);
-
-    for element in document.descendants().elements() {
-        let mut attributes = element.attributes.borrow_mut();
-        for attr_name in ["href", "src"] {
-            let Some(raw_value) = attributes.get(attr_name) else {
-                continue;
-            };
-            let value = raw_value.trim();
-            if value.is_empty() {
-                continue;
-            }
-            if Url::parse(value).is_ok() {
-                continue;
-            }
-            if let Ok(resolved) = base_url.join(value) {
-                attributes.insert(attr_name, resolved.into());
-            }
-        }
-    }
-
-    Ok(document.to_string())
 }
 
 fn is_table_border_char(ch: char) -> bool {
@@ -399,20 +356,187 @@ fn normalize_text_content(text: String, strip_table_borders: bool) -> String {
     normalized
 }
 
+fn html_escape_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn normalize_inline_text(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn first_image_alt(node: &NodeRef) -> Option<String> {
+    let Ok(images) = node.select("img[alt]") else {
+        return None;
+    };
+
+    for image in images {
+        let attributes = image.attributes.borrow();
+        let Some(alt) = attributes.get("alt") else {
+            continue;
+        };
+        let alt = normalize_inline_text(alt);
+        if !alt.is_empty() {
+            return Some(alt);
+        }
+    }
+
+    None
+}
+
+fn cell_text_hint(cell: &NodeRef) -> String {
+    let text = normalize_inline_text(&cell.text_contents());
+    if !text.is_empty() {
+        return text;
+    }
+    first_image_alt(cell).unwrap_or_default()
+}
+
+fn is_bullet_like(value: &str) -> bool {
+    matches!(value.trim(), "・" | "•" | "●" | "■" | "▪" | "◦" | "-" | "*")
+}
+
+fn cell_inner_html(cell: &NodeRef) -> String {
+    cell.children()
+        .map(|child| child.to_string())
+        .collect::<Vec<_>>()
+        .join("")
+        .trim()
+        .to_string()
+}
+
+fn row_cells(row: &NodeRef) -> Result<Vec<NodeRef>> {
+    matching_nodes(row, "td, th", "row cells")
+}
+
+fn is_flattenable_archive_table(table: &NodeRef) -> Result<bool> {
+    let rows = matching_nodes(table, "tr", "table rows")?;
+    if rows.len() < 2 {
+        return Ok(false);
+    }
+
+    let mut bullet_rows = 0;
+    let mut link_rows = 0;
+    let mut data_rows = 0;
+
+    for row in rows {
+        let cells = row_cells(&row)?;
+        if cells.is_empty() {
+            continue;
+        }
+        if !(2..=3).contains(&cells.len()) {
+            return Ok(false);
+        }
+
+        data_rows += 1;
+        for cell in &cells {
+            if !matching_nodes(cell, "table", "nested tables")?.is_empty() {
+                return Ok(false);
+            }
+        }
+        if is_bullet_like(&cell_text_hint(&cells[0])) {
+            bullet_rows += 1;
+        }
+        if !matching_nodes(&row, "a[href]", "row links")?.is_empty() {
+            link_rows += 1;
+        }
+    }
+
+    Ok(data_rows >= 2 && bullet_rows >= 2 && link_rows >= 2)
+}
+
+fn flattened_row_html(row: &NodeRef) -> Result<Option<String>> {
+    let cells = row_cells(row)?;
+    if cells.is_empty() {
+        return Ok(None);
+    }
+
+    let mut parts = Vec::new();
+    let start_index = if is_bullet_like(&cell_text_hint(&cells[0])) {
+        parts.push(String::from("・"));
+        1
+    } else {
+        0
+    };
+
+    for cell in cells.iter().skip(start_index) {
+        let html = cell_inner_html(cell);
+        if !html.is_empty() {
+            parts.push(html);
+            continue;
+        }
+
+        let hint = cell_text_hint(cell);
+        if !hint.is_empty() {
+            parts.push(html_escape_text(&hint));
+        }
+    }
+
+    if parts.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(format!("<p>{}</p>", parts.join(" "))))
+}
+
+fn replacement_nodes_from_html(fragment_html: &str) -> Result<Vec<NodeRef>> {
+    let wrapper = kuchiki::parse_html().one(format!("<html><body>{fragment_html}</body></html>"));
+    let body = wrapper
+        .select_first("body")
+        .map_err(|_| anyhow!("Failed to parse replacement HTML fragment."))?;
+    Ok(body.as_node().children().collect())
+}
+
+fn flatten_simple_archive_tables(html_content: &str) -> Result<String> {
+    let document = kuchiki::parse_html().one(html_content);
+    let tables = matching_nodes(&document, "table", "tables")?;
+
+    for table in tables {
+        if !is_flattenable_archive_table(&table)? {
+            continue;
+        }
+
+        let rows = matching_nodes(&table, "tr", "table rows")?;
+        let mut flattened_rows = Vec::new();
+        for row in rows {
+            if let Some(row_html) = flattened_row_html(&row)? {
+                flattened_rows.push(row_html);
+            }
+        }
+
+        if flattened_rows.is_empty() {
+            continue;
+        }
+
+        let replacement_html = flattened_rows.join("\n");
+        for replacement in replacement_nodes_from_html(&replacement_html)? {
+            table.insert_before(replacement);
+        }
+        table.detach();
+    }
+
+    Ok(document.to_string())
+}
+
 fn text_plain_from_html(
     html_content: &str,
     width: usize,
     include_selectors: Option<&str>,
     exclude_selectors: Option<&str>,
     strip_table_borders: bool,
-    source_url: Option<&str>,
 ) -> Result<String> {
     let filtered_html = filter_html(html_content, include_selectors, exclude_selectors)?;
     if filtered_html.is_empty() {
         return Ok(String::new());
     }
 
-    let render_html = absolutize_document_urls(&filtered_html, source_url)?;
+    let render_html = if strip_table_borders {
+        flatten_simple_archive_tables(&filtered_html)?
+    } else {
+        filtered_html
+    };
     let text = html2text::from_read(render_html.as_bytes(), normalize_width(width));
     Ok(normalize_text_content(text, strip_table_borders))
 }
@@ -531,7 +655,6 @@ fn convert_html_file_to_text_impl(
         include_selectors,
         exclude_selectors,
         strip_table_borders,
-        None,
     )?;
     write_text_file(output_file, &text_content)
 }
@@ -557,35 +680,6 @@ fn convert_html_files_to_text_batch_impl(
                 strip_table_borders,
             )
         })
-}
-
-fn convert_html_directory_to_text_impl(
-    input_dir: &str,
-    output_dir: &str,
-    width: usize,
-    include_selectors: Option<&str>,
-    exclude_selectors: Option<&str>,
-    strip_table_borders: bool,
-) -> Result<()> {
-    let paths = collect_html_files(input_dir);
-    if paths.is_empty() {
-        return Err(anyhow!("No HTML files found in the provided directory."));
-    }
-
-    paths.par_iter().try_for_each(|file_path| {
-        let relative_path = file_path.strip_prefix(input_dir).unwrap_or(file_path);
-        let output_path = Path::new(output_dir)
-            .join(relative_path)
-            .with_extension("txt");
-        convert_html_file_to_text_impl(
-            &file_path.to_string_lossy(),
-            &output_path.to_string_lossy(),
-            width,
-            include_selectors,
-            exclude_selectors,
-            strip_table_borders,
-        )
-    })
 }
 
 fn is_simple_css_identifier(value: &str) -> bool {
@@ -777,7 +871,6 @@ fn run_cli(args: Vec<String>) -> Result<()> {
                 include_selectors.as_deref(),
                 exclude_selectors.as_deref(),
                 args.filter.strip_table_borders,
-                args.source_url.as_deref(),
             )?;
             if let Some(output_file) = args.output {
                 write_text_file(&output_file, &text)?;
@@ -791,18 +884,6 @@ fn run_cli(args: Vec<String>) -> Result<()> {
             convert_html_file_to_text_impl(
                 &args.input_file,
                 &args.output_file,
-                args.filter.width,
-                include_selectors.as_deref(),
-                exclude_selectors.as_deref(),
-                args.filter.strip_table_borders,
-            )?;
-        }
-        CliCommand::ConvertDir(args) => {
-            let include_selectors = normalize_selector_list(Some(args.filter.include_selectors));
-            let exclude_selectors = normalize_selector_list(Some(args.filter.exclude_selectors));
-            convert_html_directory_to_text_impl(
-                &args.input_dir,
-                &args.output_dir,
                 args.filter.width,
                 include_selectors.as_deref(),
                 exclude_selectors.as_deref(),
@@ -842,7 +923,7 @@ fn decode_python_html_input(input: &PyAny, argument_name: &str) -> PyResult<Stri
     )))
 }
 
-#[pyfunction(signature = (html_content, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false, source_url = None))]
+#[pyfunction(signature = (html_content, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
 fn text_plain(
     py: Python<'_>,
     html_content: &PyAny,
@@ -850,7 +931,6 @@ fn text_plain(
     include_selectors: Option<Vec<String>>,
     exclude_selectors: Option<Vec<String>>,
     strip_table_borders: bool,
-    source_url: Option<String>,
 ) -> PyResult<String> {
     let include_selectors = normalize_selector_list(include_selectors);
     let exclude_selectors = normalize_selector_list(exclude_selectors);
@@ -862,12 +942,11 @@ fn text_plain(
             include_selectors.as_deref(),
             exclude_selectors.as_deref(),
             strip_table_borders,
-            source_url.as_deref(),
         )
     }))
 }
 
-#[pyfunction(signature = (html_bytes, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false, source_url = None))]
+#[pyfunction(signature = (html_bytes, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
 fn text_plain_from_bytes(
     py: Python<'_>,
     html_bytes: Vec<u8>,
@@ -875,7 +954,6 @@ fn text_plain_from_bytes(
     include_selectors: Option<Vec<String>>,
     exclude_selectors: Option<Vec<String>>,
     strip_table_borders: bool,
-    source_url: Option<String>,
 ) -> PyResult<String> {
     let include_selectors = normalize_selector_list(include_selectors);
     let exclude_selectors = normalize_selector_list(exclude_selectors);
@@ -887,12 +965,11 @@ fn text_plain_from_bytes(
             include_selectors.as_deref(),
             exclude_selectors.as_deref(),
             strip_table_borders,
-            source_url.as_deref(),
         )
     }))
 }
 
-#[pyfunction(signature = (input_file, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false, source_url = None))]
+#[pyfunction(signature = (input_file, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
 fn extract_text_from_html_file_py(
     py: Python<'_>,
     input_file: &str,
@@ -900,7 +977,6 @@ fn extract_text_from_html_file_py(
     include_selectors: Option<Vec<String>>,
     exclude_selectors: Option<Vec<String>>,
     strip_table_borders: bool,
-    source_url: Option<String>,
 ) -> PyResult<String> {
     let include_selectors = normalize_selector_list(include_selectors);
     let exclude_selectors = normalize_selector_list(exclude_selectors);
@@ -912,12 +988,11 @@ fn extract_text_from_html_file_py(
             include_selectors.as_deref(),
             exclude_selectors.as_deref(),
             strip_table_borders,
-            source_url.as_deref(),
         )
     }))
 }
 
-#[pyfunction(signature = (html_content, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false, source_url = None))]
+#[pyfunction(signature = (html_content, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
 fn extract_text_from_html_py(
     py: Python<'_>,
     html_content: &PyAny,
@@ -925,7 +1000,6 @@ fn extract_text_from_html_py(
     include_selectors: Option<Vec<String>>,
     exclude_selectors: Option<Vec<String>>,
     strip_table_borders: bool,
-    source_url: Option<String>,
 ) -> PyResult<String> {
     text_plain(
         py,
@@ -934,32 +1008,7 @@ fn extract_text_from_html_py(
         include_selectors,
         exclude_selectors,
         strip_table_borders,
-        source_url,
     )
-}
-
-#[pyfunction(signature = (input_dir, output_dir, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
-fn convert_html_directory_to_text(
-    py: Python<'_>,
-    input_dir: &str,
-    output_dir: &str,
-    width: usize,
-    include_selectors: Option<Vec<String>>,
-    exclude_selectors: Option<Vec<String>>,
-    strip_table_borders: bool,
-) -> PyResult<()> {
-    let include_selectors = normalize_selector_list(include_selectors);
-    let exclude_selectors = normalize_selector_list(exclude_selectors);
-    to_py_result(py.allow_threads(|| {
-        convert_html_directory_to_text_impl(
-            input_dir,
-            output_dir,
-            width,
-            include_selectors.as_deref(),
-            exclude_selectors.as_deref(),
-            strip_table_borders,
-        )
-    }))
 }
 
 #[pyfunction(signature = (input_files, output_files, width = DEFAULT_WIDTH, include_selectors = None, exclude_selectors = None, strip_table_borders = false))]
@@ -1050,7 +1099,6 @@ fn html2text_rs_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(text_plain_from_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(extract_text_from_html_file_py, m)?)?;
     m.add_function(wrap_pyfunction!(extract_text_from_html_py, m)?)?;
-    m.add_function(wrap_pyfunction!(convert_html_directory_to_text, m)?)?;
     m.add_function(wrap_pyfunction!(convert_html_file_to_text_py, m)?)?;
     m.add_function(wrap_pyfunction!(convert_html_files_to_text_batch_py, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_html_directory_selectors_py, m)?)?;

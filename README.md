@@ -30,7 +30,7 @@ The fastest workflow is:
 
 1. run selector analysis on a representative sample directory
 2. inspect the repeated selectors and decide what to keep or drop
-3. run extraction or directory conversion with those selectors across the whole corpus
+3. run extraction with those selectors across the whole corpus in your own loop
 
 Example CLI workflow:
 
@@ -39,9 +39,7 @@ html2text-rs-py selectors ./sample-html --top-k 40 --min-docs 10
 
 # decide from the output that the good content is in #content
 # and the junk is in nav, .sidebar, .footer, and .breadcrumbs
-html2text-rs-py convert-dir \
-  ./sample-html \
-  ./clean-txt \
+html2text-rs-py extract ./sample-html/page.html \
   --include '#content' \
   --exclude nav \
   --exclude .sidebar \
@@ -52,22 +50,23 @@ html2text-rs-py convert-dir \
 Example Python workflow for a directory you already have on disk:
 
 ```python
-from html2text_rs_py import (
-    analyze_html_directory_selectors_py,
-    convert_html_directory_to_text,
-)
+from pathlib import Path
+
+from html2text_rs_py import analyze_html_directory_selectors_py, extract_text_from_html_file_py
 
 stats = analyze_html_directory_selectors_py("./sample-html", top_k=40, min_docs=10)
 
 for selector, kind, documents, occurrences in stats[:15]:
     print(kind, selector, documents, occurrences)
 
-convert_html_directory_to_text(
-    "./sample-html",
-    "./clean-txt",
-    include_selectors=["#content"],
-    exclude_selectors=["nav", ".sidebar", ".footer", ".breadcrumbs"],
-)
+for html_path in Path("./sample-html").rglob("*.html"):
+    text = extract_text_from_html_file_py(
+        str(html_path),
+        include_selectors=["#content"],
+        exclude_selectors=["nav", ".sidebar", ".footer", ".breadcrumbs"],
+    )
+    out_path = Path("./clean-txt") / html_path.with_suffix(".txt").name
+    out_path.write_text(text, encoding="utf-8")
 ```
 
 If your crawler has raw response bytes rather than decoded strings, use the bytes API directly:
@@ -158,16 +157,6 @@ text = text_plain_from_bytes(
 )
 ```
 
-If you want relative links in the rendered text to become absolute, pass the page URL:
-
-```python
-text = text_plain(
-    html,
-    include_selectors=["#content"],
-    source_url="https://www.mofa.go.jp/mofaj/press/release/index.html",
-)
-```
-
 If older table-layout pages produce divider art in the output, you can strip those border-only lines after rendering:
 
 ```python
@@ -191,19 +180,12 @@ for selector, kind, documents, occurrences in stats:
 
 That selector output is meant to feed directly back into your next extraction run.
 
-File and directory conversion still work, now with optional selector filters:
+File conversion still works, now with optional selector filters:
 
 ```python
 from html2text_rs_py import (
-    convert_html_directory_to_text,
     convert_html_file_to_text_py,
     extract_text_from_html_file_py,
-)
-
-convert_html_directory_to_text(
-    "./input_html",
-    "./output_txt",
-    exclude_selectors=["nav", ".sidebar", "footer"],
 )
 
 convert_html_file_to_text_py(
@@ -227,9 +209,7 @@ The package exposes a console script:
 html2text-rs-py selectors ./corpus --top-k 50 --min-docs 5
 html2text-rs-py extract page.html --exclude nav --exclude footer
 html2text-rs-py extract page.html --include '#content' --strip-table-borders
-html2text-rs-py extract page.html --include '#content' --source-url 'https://www.mofa.go.jp/mofaj/press/release/index.html'
 html2text-rs-py convert-file page.html page.txt --include main --exclude .ad-slot
-html2text-rs-py convert-dir ./html ./txt --exclude nav --exclude .sidebar --exclude footer
 ```
 
 `selectors` prints tab-separated columns:
@@ -254,4 +234,4 @@ If both `include_selectors` and `exclude_selectors` are provided, the pipeline i
 2. HTML decoding now checks BOM first, then `<meta charset=...>`, then falls back to UTF-8 handling.
 3. `strip_table_borders=True` removes lines that are only table-border glyphs from old table-layout pages.
 4. The selector explorer is designed to surface repeated classes, ids, tags, tag-class combos, and tag-id combos across a corpus.
-5. The package version is currently `0.2.2`.
+5. The package version is currently `0.2.3`.

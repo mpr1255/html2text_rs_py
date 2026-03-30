@@ -5,7 +5,6 @@ import unittest
 
 from html2text_rs_py import (
     analyze_html_directory_selectors_py,
-    convert_html_directory_to_text,
     convert_html_file_to_text_py,
     convert_html_files_to_text_batch_py,
     extract_text_from_html_file_py,
@@ -66,17 +65,6 @@ class TestHtml2TextRust(unittest.TestCase):
         total_size = self.compute_total_output_size()
         print(
             f"Batch conversion test: converted {len(self.input_files)} files "
-            f"with a total size of {total_size} bytes."
-        )
-
-        self.assert_directory_file_count()
-
-    def test_directory_conversion(self):
-        convert_html_directory_to_text(self.input_folder, self.output_folder)
-
-        total_size = self.compute_total_output_size()
-        print(
-            f"Directory conversion test: converted {len(self.input_files)} files "
             f"with a total size of {total_size} bytes."
         )
 
@@ -305,26 +293,6 @@ class TestHtml2TextRust(unittest.TestCase):
         self.assertIn("本文を抽出します", extracted_text)
         self.assertNotIn("Menu", extracted_text)
 
-    def test_source_url_resolves_relative_links(self):
-        html = """
-        <html>
-            <body>
-                <main id="content">
-                    <a href="/mofaj/press/release/example.html">Press release</a>
-                </main>
-            </body>
-        </html>
-        """
-
-        extracted_text = text_plain(
-            html,
-            include_selectors=["#content"],
-            source_url="https://www.mofa.go.jp/mofaj/press/release/index.html",
-        )
-
-        self.assertIn("Press release", extracted_text)
-        self.assertIn("https://www.mofa.go.jp/mofaj/press/release/example.html", extracted_text)
-
     def test_strip_table_borders_flag_removes_border_only_lines(self):
         html = """
         <html>
@@ -344,6 +312,41 @@ class TestHtml2TextRust(unittest.TestCase):
         self.assertIn("────────────────────────", unfiltered_text)
         self.assertIn("本文", filtered_text)
         self.assertNotIn("────────────────────────", filtered_text)
+
+    def test_strip_table_borders_flattens_simple_archive_table(self):
+        html = """
+        <html>
+            <body>
+                <center>
+                    <b>過去の記録</b><br>
+                    <table border="0" cellspacing="0" cellpadding="2" width="550">
+                        <tr align="left" valign="top">
+                            <td nowrap><img src="image/button_y.gif" alt="・"></td>
+                            <td><a href="16/rls_0531b.html">日・オランダ租税条約改正に向けた第1回正式交渉の開催について</a></td>
+                            <td nowrap>（平成16年5月31日）</td>
+                        </tr>
+                        <tr align="left" valign="top">
+                            <td nowrap><img src="image/button_y.gif" alt="・"></td>
+                            <td><a href="16/rls_0531a.html">インドの「ポリオ撲滅計画」のためのユニセフに対する無償資金協力について</a></td>
+                            <td nowrap>（平成16年5月31日）</td>
+                        </tr>
+                    </table>
+                </center>
+            </body>
+        </html>
+        """
+
+        flattened_text = text_plain(
+            html,
+            include_selectors=["body center"],
+            strip_table_borders=True,
+            width=10000,
+        )
+
+        self.assertIn("過去の記録", flattened_text)
+        self.assertIn("・ [日・オランダ租税条約改正に向けた第1回正式交渉の開催について][1] （平成16年5月31日）", flattened_text)
+        self.assertIn("・ [インドの「ポリオ撲滅計画」のためのユニセフに対する無償資金協力について][2] （平成16年5月31日）", flattened_text)
+        self.assertNotIn("│", flattened_text)
 
 
 if __name__ == "__main__":
