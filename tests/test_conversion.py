@@ -196,6 +196,33 @@ class TestHtml2TextRust(unittest.TestCase):
         self.assertIn("Useful text", extract_run.stdout)
         self.assertNotIn("Menu", extract_run.stdout)
 
+    def test_non_utf8_html_does_not_abort_analysis_or_extraction(self):
+        corpus_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(corpus_dir.cleanup)
+
+        html_file = os.path.join(corpus_dir.name, "latinish.html")
+        html_bytes = (
+            b"<html><body>"
+            b"<nav class='site-nav'>Menu\x92Bar</nav>"
+            b"<main id='content'><p>Useful\x96text</p></main>"
+            b"</body></html>"
+        )
+
+        with open(html_file, "wb") as handle:
+            handle.write(html_bytes)
+
+        stats = analyze_html_directory_selectors_py(corpus_dir.name, top_k=20, min_docs=1)
+        by_selector = {selector: (kind, documents, occurrences) for selector, kind, documents, occurrences in stats}
+
+        self.assertIn(".site-nav", by_selector)
+
+        extracted_text = extract_text_from_html_file_py(
+            html_file,
+            exclude_selectors=["nav"],
+        )
+        self.assertIn("Useful", extracted_text)
+        self.assertNotIn("Menu", extracted_text)
+
 
 if __name__ == "__main__":
     unittest.main()

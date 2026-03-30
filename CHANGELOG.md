@@ -7,4 +7,5 @@
 3. Added a CLI entry point, `html2text-rs-py`, with `selectors`, `extract`, `convert-file`, and `convert-dir` subcommands for rapid selector exploration and selector-aware conversion.
 4. Switched the differentiating DOM preprocessing layer to `kuchiki`, which provides CSS selection, node detachment, and HTML serialization before handing content to `html2text`.
 5. Reworked the test suite to use temporary output directories and added coverage for selector filtering, selector analysis, and CLI behavior.
-6. Updated package metadata and documentation for the `0.2.0` release.
+6. Stopped selector analysis and extraction from aborting on non-UTF-8 HTML files by switching the wrapper’s file-loading path to raw-byte reads with loss-tolerant decoding.
+7. Updated package metadata and documentation for the `0.2.0` release.

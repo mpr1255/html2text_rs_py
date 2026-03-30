@@ -207,9 +207,14 @@ fn text_plain_from_html(
     ))
 }
 
+fn decode_html_bytes(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
 fn read_html_file(input_file: &str) -> Result<String> {
-    fs::read_to_string(input_file)
-        .with_context(|| format!("Failed to read HTML file: {input_file}"))
+    let html_bytes =
+        fs::read(input_file).with_context(|| format!("Failed to read HTML file: {input_file}"))?;
+    Ok(decode_html_bytes(&html_bytes))
 }
 
 fn write_text_file(output_file: &str, text_content: &str) -> Result<()> {
@@ -375,9 +380,10 @@ fn analyze_html_directory_selectors_impl(
     let per_document = files
         .par_iter()
         .map(|file_path| -> Result<HashMap<(String, String), usize>> {
-            let html_content = fs::read_to_string(file_path).with_context(|| {
+            let html_bytes = fs::read(file_path).with_context(|| {
                 format!("Failed to read HTML file: {}", file_path.to_string_lossy())
             })?;
+            let html_content = decode_html_bytes(&html_bytes);
             Ok(selector_occurrences_in_html(&html_content))
         })
         .collect::<Vec<_>>();
@@ -433,11 +439,11 @@ fn selector_stats_to_python_rows(stats: Vec<SelectorStat>) -> Vec<(String, Strin
 
 fn read_cli_input(input: &str) -> Result<String> {
     if input == "-" {
-        let mut html = String::new();
+        let mut html_bytes = Vec::new();
         std::io::stdin()
-            .read_to_string(&mut html)
+            .read_to_end(&mut html_bytes)
             .context("Failed to read HTML from stdin")?;
-        Ok(html)
+        Ok(decode_html_bytes(&html_bytes))
     } else {
         read_html_file(input)
     }
