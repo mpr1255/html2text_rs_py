@@ -1,29 +1,62 @@
-```markdown
-# Documentation for html2text_rs_py
+# html2text_rs_py docs
 
-## Functions
+## Main Python functions
 
-### `convert_html_directory_to_text(input_dir: str, output_dir: str) -> None`
+`text_plain(html_content: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None) -> str`
 
-Converts all HTML files in the specified input directory to text and saves them to the output directory.
+Converts HTML text to plain text, optionally keeping only selected subtrees or removing unwanted selectors before rendering.
 
-**Parameters**:
-- `input_dir`: Path to the directory containing the input HTML files.
-- `output_dir`: Path to the directory where the output text files should be saved.
+`extract_text_from_html_py(...) -> str`
 
-### `convert_html_files_to_text_batch_py(input_files: List[str], output_files: List[str]) -> None`
+Alias-style string input helper with the same selector options as `text_plain`.
 
-Converts the specified batch of HTML files to text.
+`extract_text_from_html_file_py(input_file: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None) -> str`
 
-**Parameters**:
-- `input_files`: List of paths to the input HTML files.
-- `output_files`: List of paths where the output text files should be saved.
+Reads an HTML file, optionally filters by selectors, and returns plain text.
 
-### `convert_html_file_to_text_py(input_file: str, output_file: str) -> None`
+`convert_html_file_to_text_py(input_file: str, output_file: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None) -> None`
 
-Converts a single HTML file to text.
+Converts one HTML file to one text file.
 
-**Parameters**:
-- `input_file`: Path to the input HTML file.
-- `output_file`: Path where the output text file should be saved.
-```
+`convert_html_files_to_text_batch_py(input_files: list[str], output_files: list[str], width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None) -> None`
+
+Converts many HTML files in parallel.
+
+`convert_html_directory_to_text(input_dir: str, output_dir: str, width: int = 80, include_selectors: list[str] | None = None, exclude_selectors: list[str] | None = None) -> None`
+
+Walks a directory tree, finds HTML files, and writes matching text files into the output tree.
+
+`analyze_html_directory_selectors_py(input_dir: str, top_k: int = 50, min_docs: int = 1) -> list[tuple[str, str, int, int]]`
+
+Analyzes a corpus of HTML files and returns tuples of:
+
+`(selector, kind, documents, occurrences)`
+
+Kinds include:
+
+1. `tag`
+2. `class`
+3. `id`
+4. `tag_class`
+5. `tag_id`
+
+## CLI
+
+The installed console script is:
+
+`html2text-rs-py`
+
+Supported subcommands:
+
+1. `selectors INPUT_DIR --top-k 50 --min-docs 5`
+2. `extract INPUT_FILE --include main --exclude nav`
+3. `convert-file INPUT_FILE OUTPUT_FILE --exclude nav --exclude footer`
+4. `convert-dir INPUT_DIR OUTPUT_DIR --include main --exclude .ad-slot`
+
+## selector pipeline
+
+When both include and exclude selectors are present:
+
+1. include selectors are applied first
+2. exclude selectors are applied to the retained HTML
+3. the filtered HTML is rendered to plain text with `html2text`

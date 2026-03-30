@@ -58,6 +58,8 @@ coverage.xml
 *.pot
 
 .DS_Store
+.history/
+uv.lock
 
 # Sphinx documentation
 docs/_build/

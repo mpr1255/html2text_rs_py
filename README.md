@@ -1,94 +1,133 @@
 # html2text_rs_py
-A Python library backed by Rust's [html2text](https://docs.rs/html2text) to convert HTML to plain text. The project leverages the power of Rust to ensure fast and efficient operations, while providing an easy-to-use Python interface.
 
-Note this entire thing was done with GPT-4 and it's my first time touching Rust -- just a bit of a weekend sidequest/learning experience. As a wise man once said: *"I'm in the arena trying stuff. Some will work, some won't. But always learning."*
+`html2text_rs_py` is a Python package backed by Rust’s [`html2text`](https://docs.rs/html2text) with two extra affordances aimed at real corpora:
 
-## Table of Contents
-- [Installation](#installation)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
-- [Note on benchmarks](#Note-on-benchmarks)
-- [Benchmarks](#Benchmarks)
+1. selector-aware filtering before conversion, so you can keep or drop things like navbars, sidebars, footers, and ads
+2. selector frequency analysis across a directory of HTML files, so you can quickly spot the repeated selectors worth excluding
+
+This package is still focused on plain text output. The main value over a thin wrapper is the selector-analysis and selector-filtering workflow.
 
 ## Installation
 
-### Prerequisites:
-1. Ensure you have both [Rust](https://www.rust-lang.org/tools/install) and Python installed on your machine.
-2. Install `maturin`:
+For development builds:
 
 ```bash
-pip install maturin
+uv tool install maturin
+uv tool run maturin develop --release
 ```
 
-### Building and Installing:
-
-#### Option 1: Use precompiled binaries from PyPI
-You can use the precompiled binaries available on PyPI. This means you don't need to compile anything yourself, and the Rust toolchain is not required.
+If you are working inside the repo and want an ephemeral environment:
 
 ```bash
-pip install html2text_rs_py
+uv run --with maturin maturin develop --release
 ```
 
-#### Option 2: Building from source:
-If you prefer to compile the Rust code yourself, or if you're interested in developing, you can build directly from the source code:
+## Python usage
 
-1. First, ensure you have the Rust toolchain installed. If you don't have it, get it from rustup.rs.
-
-2. Clone this repo:
-
-```bash
-git clone https://github.com/mpr1255/html2text_rs_py.git
-cd html2text_rs_py
-```
-
-3. Build and install the Python package:
-
-```bash
-maturin develop --release
-```
-
-This will compile the Rust code and link it with the Python wrapper, making the module available for Python.
-
-## Usage
-
-After installing, you can use the Rust functions directly in Python:
+String-first extraction:
 
 ```python
-from html2text_rs_py import convert_html_directory_to_text, convert_html_file_to_text_py, convert_html_files_to_text_batch_py, extract_text_from_html_file_py
+from html2text_rs_py import text_plain
 
-convert_html_directory_to_text("./input_directory", "./output_directory")
+html = """
+<html>
+  <body>
+    <nav class="site-nav">Menu</nav>
+    <main id="content">
+      <h1>Title</h1>
+      <p>Body text</p>
+    </main>
+    <footer>Footer</footer>
+  </body>
+</html>
+"""
 
-# Convert a single HTML file to text
-convert_html_file_to_text_py("input_file.html", "output_file.txt")
-
-# Convert multiple HTML files to text in a batch
-input_files = ["input1.html", "input2.html"]
-output_files = ["output1.txt", "output2.txt"]
-convert_html_files_to_text_batch_py(input_files, output_files)
-
-# Convert html file into a python string object and return as a variable
-input_file_path = "path/to/file.html"
-extracted_text = extract_text_from_html_file_py(input_file_path)
+text = text_plain(
+    html,
+    exclude_selectors=["nav", "footer"],
+)
 ```
 
-## Contributing
+Include first, then exclude inside the kept subtree:
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you'd like to change. Please make sure to update tests as appropriate.
+```python
+from html2text_rs_py import text_plain
 
-## License
-[MIT](https://choosealicense.com/licenses/mit)
+text = text_plain(
+    html,
+    include_selectors=["#content", "article"],
+    exclude_selectors=[".ad-slot", ".newsletter-signup"],
+)
+```
 
-## Note on benchmarks
+Selector analysis across a corpus:
 
-Speed was the motivation for this little project. To make sure the comparison was 1:1, I generated a ~1gb dataset of html files that do NOT contain links  (because the Rust html2text library does not expose a flag to stop generating the hyperlinked URLs, and I don't know enough Rust to figure it out). This shows that it's only ~6x faster than the normal python implementation and only ~3x faster than the Tika... Not that great... However, I will say there is a lot of boilerplate overhead with those (multithreading) whereas this wrapper has three very simple functions you can call, and the multithreading happens for free under the hood with Rust's rayon.
+```python
+from html2text_rs_py import analyze_html_directory_selectors_py
 
-## Benchmarks
+stats = analyze_html_directory_selectors_py("./corpus", top_k=25, min_docs=5)
 
-| Method | Threading | Documents Processed | Total Output Size (bytes) | Errors | Time (seconds) |
-| --- | --- | --- | --- | --- | --- |
-| tika | single-threaded | 3007 | 1500926103 | 0 | 94.76 |
-| html2text | single-threaded | 3007 | 1500340646 | 0 | 184.90 |
-| tika | multi-threaded | 3007 | 1500926103 | 0 | 14.29 |
-| html2text | multi-threaded | 3007 | 1500340646 | 0 | 25.65 |
-| rust | multi-threaded | 3007 | 1531829273 | 0 | 3.92 |
+for selector, kind, documents, occurrences in stats:
+    print(kind, selector, documents, occurrences)
+```
+
+File and directory conversion still work, now with optional selector filters:
+
+```python
+from html2text_rs_py import (
+    convert_html_directory_to_text,
+    convert_html_file_to_text_py,
+    extract_text_from_html_file_py,
+)
+
+convert_html_directory_to_text(
+    "./input_html",
+    "./output_txt",
+    exclude_selectors=["nav", ".sidebar", "footer"],
+)
+
+convert_html_file_to_text_py(
+    "page.html",
+    "page.txt",
+    include_selectors=["main"],
+    exclude_selectors=[".ad-slot"],
+)
+
+text = extract_text_from_html_file_py(
+    "page.html",
+    exclude_selectors=["nav", ".sidebar"],
+)
+```
+
+## CLI usage
+
+The package exposes a console script:
+
+```bash
+html2text-rs-py selectors ./corpus --top-k 50 --min-docs 5
+html2text-rs-py extract page.html --exclude nav --exclude footer
+html2text-rs-py convert-file page.html page.txt --include main --exclude .ad-slot
+html2text-rs-py convert-dir ./html ./txt --exclude nav --exclude .sidebar --exclude footer
+```
+
+`selectors` prints tab-separated columns:
+
+```text
+kind    selector    documents    occurrences
+```
+
+The emitted selectors are intended to be pasted directly back into `--include`, `--exclude`, `include_selectors`, or `exclude_selectors`.
+
+## selector semantics
+
+If both `include_selectors` and `exclude_selectors` are provided, the pipeline is:
+
+1. keep the union of the included selector matches
+2. remove any nodes inside that retained content that match the exclude selectors
+3. pass the filtered HTML into `html2text`
+
+## Notes
+
+1. `kuchiki` is used for selector matching, node removal, and re-serialization before the final `html2text` render.
+2. The selector explorer is designed to surface repeated classes, ids, tags, tag-class combos, and tag-id combos across a corpus.
+3. The package version is currently `0.2.0`.
