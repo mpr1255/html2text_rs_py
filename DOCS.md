@@ -10,6 +10,8 @@ Converts HTML text to plain text, optionally keeping only selected subtrees or r
 
 Accepts raw HTML bytes, sniffs BOM or `<meta charset=...>`, decodes with `encoding_rs`, then applies the same selector-aware extraction pipeline.
 
+This is the preferred entry point when your fetcher already has raw response bytes and you do not want caller-side charset handling.
+
 `extract_text_from_html_py(...) -> str`
 
 Alias-style string input helper with the same selector options as `text_plain`.

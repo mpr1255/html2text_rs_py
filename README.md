@@ -12,6 +12,77 @@ It now also handles non-UTF-8 HTML inputs more directly:
 1. file and CLI paths read raw bytes and sniff BOM or `<meta charset=...>` before decoding
 2. Python callers can pass raw HTML bytes directly when the upstream fetcher has not decoded the response yet
 
+## When to use this library
+
+This is the right tool when you have a large corpus of HTML files with broadly similar structure and you want cleaned text fast.
+
+Typical fit:
+
+1. the site repeats the same navigation, footer, sidebar, promo blocks, or archive chrome on every page
+2. the useful content usually sits inside one or two stable selectors such as `main`, `article`, or `#content`
+3. you want a simple text-cleaning pipeline, not custom DOM extraction code for every page
+
+If you need arbitrary DOM traversal, per-site extraction logic, or lots of one-off parsing rules, stay with `bs4`/`lxml`. If you need “bulk HTML in, clean text out, with selector-based keep/drop rules,” this is the case it is built for.
+
+## Typical corpus workflow
+
+The fastest workflow is:
+
+1. run selector analysis on a representative sample directory
+2. inspect the repeated selectors and decide what to keep or drop
+3. run extraction or directory conversion with those selectors across the whole corpus
+
+Example CLI workflow:
+
+```bash
+html2text-rs-py selectors ./sample-html --top-k 40 --min-docs 10
+
+# decide from the output that the good content is in #content
+# and the junk is in nav, .sidebar, .footer, and .breadcrumbs
+html2text-rs-py convert-dir \
+  ./sample-html \
+  ./clean-txt \
+  --include '#content' \
+  --exclude nav \
+  --exclude .sidebar \
+  --exclude .footer \
+  --exclude .breadcrumbs
+```
+
+Example Python workflow for a directory you already have on disk:
+
+```python
+from html2text_rs_py import (
+    analyze_html_directory_selectors_py,
+    convert_html_directory_to_text,
+)
+
+stats = analyze_html_directory_selectors_py("./sample-html", top_k=40, min_docs=10)
+
+for selector, kind, documents, occurrences in stats[:15]:
+    print(kind, selector, documents, occurrences)
+
+convert_html_directory_to_text(
+    "./sample-html",
+    "./clean-txt",
+    include_selectors=["#content"],
+    exclude_selectors=["nav", ".sidebar", ".footer", ".breadcrumbs"],
+)
+```
+
+If your crawler has raw response bytes rather than decoded strings, use the bytes API directly:
+
+```python
+from html2text_rs_py import text_plain_from_bytes
+
+text = text_plain_from_bytes(
+    raw_html_bytes,
+    include_selectors=["#content"],
+    exclude_selectors=["nav", ".sidebar", ".footer", ".breadcrumbs"],
+    strip_table_borders=True,
+)
+```
+
 ## Installation
 
 For development builds:
@@ -98,6 +169,8 @@ for selector, kind, documents, occurrences in stats:
     print(kind, selector, documents, occurrences)
 ```
 
+That selector output is meant to feed directly back into your next extraction run.
+
 File and directory conversion still work, now with optional selector filters:
 
 ```python
@@ -160,4 +233,4 @@ If both `include_selectors` and `exclude_selectors` are provided, the pipeline i
 2. HTML decoding now checks BOM first, then `<meta charset=...>`, then falls back to UTF-8 handling.
 3. `strip_table_borders=True` removes lines that are only table-border glyphs from old table-layout pages.
 4. The selector explorer is designed to surface repeated classes, ids, tags, tag-class combos, and tag-id combos across a corpus.
-5. The package version is currently `0.2.0`.
+5. The package version is currently `0.2.1`.
