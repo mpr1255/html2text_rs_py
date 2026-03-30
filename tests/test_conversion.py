@@ -11,6 +11,7 @@ from html2text_rs_py import (
     extract_text_from_html_file_py,
     extract_text_from_html_py,
     text_plain,
+    text_plain_from_bytes,
 )
 
 
@@ -222,6 +223,79 @@ class TestHtml2TextRust(unittest.TestCase):
         )
         self.assertIn("Useful", extracted_text)
         self.assertNotIn("Menu", extracted_text)
+
+    def test_shift_jis_bytes_api_uses_meta_charset(self):
+        html = """
+        <html>
+            <head><meta charset="Shift_JIS"></head>
+            <body>
+                <nav>Menu</nav>
+                <main id="content">
+                    <h1>外務省</h1>
+                    <p>国際協力の本文です。</p>
+                </main>
+            </body>
+        </html>
+        """
+        html_bytes = html.encode("shift_jis")
+
+        extracted_text = text_plain_from_bytes(
+            html_bytes,
+            include_selectors=["#content"],
+        )
+
+        self.assertIn("外務省", extracted_text)
+        self.assertIn("国際協力", extracted_text)
+        self.assertNotIn("Menu", extracted_text)
+
+    def test_shift_jis_file_api_uses_meta_charset(self):
+        html_file = os.path.join(self.output_folder, "shift_jis_page.html")
+        html = """
+        <html>
+            <head>
+                <meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">
+            </head>
+            <body>
+                <nav>Menu</nav>
+                <main id="content">
+                    <h1>報道発表</h1>
+                    <p>本文を抽出します。</p>
+                </main>
+            </body>
+        </html>
+        """
+
+        with open(html_file, "wb") as handle:
+            handle.write(html.encode("shift_jis"))
+
+        extracted_text = extract_text_from_html_file_py(
+            html_file,
+            include_selectors=["#content"],
+        )
+
+        self.assertIn("報道発表", extracted_text)
+        self.assertIn("本文を抽出します", extracted_text)
+        self.assertNotIn("Menu", extracted_text)
+
+    def test_strip_table_borders_flag_removes_border_only_lines(self):
+        html = """
+        <html>
+            <body>
+                <pre>
+────────────────────────
+本文
+────────────────────────
+                </pre>
+            </body>
+        </html>
+        """
+
+        unfiltered_text = text_plain(html)
+        filtered_text = text_plain(html, strip_table_borders=True)
+
+        self.assertIn("────────────────────────", unfiltered_text)
+        self.assertIn("本文", filtered_text)
+        self.assertNotIn("────────────────────────", filtered_text)
 
 
 if __name__ == "__main__":

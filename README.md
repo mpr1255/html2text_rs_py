@@ -7,6 +7,11 @@
 
 This package is still focused on plain text output. The main value over a thin wrapper is the selector-analysis and selector-filtering workflow.
 
+It now also handles non-UTF-8 HTML inputs more directly:
+
+1. file and CLI paths read raw bytes and sniff BOM or `<meta charset=...>` before decoding
+2. Python callers can pass raw HTML bytes directly when the upstream fetcher has not decoded the response yet
+
 ## Installation
 
 For development builds:
@@ -60,6 +65,28 @@ text = text_plain(
 )
 ```
 
+Bytes-first extraction for crawlers that still have raw response bytes:
+
+```python
+from html2text_rs_py import text_plain_from_bytes
+
+text = text_plain_from_bytes(
+    raw_html_bytes,
+    include_selectors=["#content", "article"],
+    exclude_selectors=["nav", ".sidebar", "footer"],
+)
+```
+
+If older table-layout pages produce divider art in the output, you can strip those border-only lines after rendering:
+
+```python
+text = text_plain_from_bytes(
+    raw_html_bytes,
+    include_selectors=["#content"],
+    strip_table_borders=True,
+)
+```
+
 Selector analysis across a corpus:
 
 ```python
@@ -106,6 +133,7 @@ The package exposes a console script:
 ```bash
 html2text-rs-py selectors ./corpus --top-k 50 --min-docs 5
 html2text-rs-py extract page.html --exclude nav --exclude footer
+html2text-rs-py extract page.html --include '#content' --strip-table-borders
 html2text-rs-py convert-file page.html page.txt --include main --exclude .ad-slot
 html2text-rs-py convert-dir ./html ./txt --exclude nav --exclude .sidebar --exclude footer
 ```
@@ -129,5 +157,7 @@ If both `include_selectors` and `exclude_selectors` are provided, the pipeline i
 ## Notes
 
 1. `kuchiki` is used for selector matching, node removal, and re-serialization before the final `html2text` render.
-2. The selector explorer is designed to surface repeated classes, ids, tags, tag-class combos, and tag-id combos across a corpus.
-3. The package version is currently `0.2.0`.
+2. HTML decoding now checks BOM first, then `<meta charset=...>`, then falls back to UTF-8 handling.
+3. `strip_table_borders=True` removes lines that are only table-border glyphs from old table-layout pages.
+4. The selector explorer is designed to surface repeated classes, ids, tags, tag-class combos, and tag-id combos across a corpus.
+5. The package version is currently `0.2.0`.
